@@ -114,44 +114,82 @@ def import_py_file(file: str | Path) -> ModuleType:
     return module
 
 
+# def get_dict_diff_by_key(
+#     old_fields: list[dict], new_fields: list[dict], key="through"
+# ) -> Generator[tuple]:
+#     """
+#     Compare two list by key instead of by index
+
+#     :param old_fields: previous field info list
+#     :param new_fields: current field info list
+#     :param key: if two dicts have the same value of this key, action is change; otherwise, is remove/add
+#     :return: similar to dictdiffer.diff
+
+#     Example::
+
+#         >>> old = [{'through': 'a'}, {'through': 'b'}, {'through': 'c'}]
+#         >>> new = [{'through': 'a'}, {'through': 'c'}]  # remove the second element
+#         >>> list(diff(old, new))
+#         [('change', [1, 'through'], ('b', 'c')),
+#          ('remove', '', [(2, {'through': 'c'})])]
+#         >>> list(get_dict_diff_by_key(old, new))
+#         [('remove', '', [(0, {'through': 'b'})])]
+
+#     """
+#     length_old, length_new = len(old_fields), len(new_fields)
+#     if length_old == 0 or length_new == 0 or length_old == length_new == 1:
+#         yield from diff(old_fields, new_fields)
+#     else:
+#         value_index: dict[str, int] = {f[key]: i for i, f in enumerate(new_fields)}
+#         additions = set(range(length_new))
+#         for field in old_fields:
+#             value = field[key]
+#             if (index := value_index.get(value)) is not None:
+#                 additions.remove(index)
+#                 yield from diff([field], [new_fields[index]])  # change
+#             else:
+#                 yield from diff([field], [])  # remove
+#         if additions:
+#             for index in sorted(additions):
+#                 yield from diff([], [new_fields[index]])  # add
+
+from collections.abc import Generator
+from deepdiff import DeepDiff  # тебе нужно будет установить через poetry
+
 def get_dict_diff_by_key(
     old_fields: list[dict], new_fields: list[dict], key="through"
-) -> Generator[tuple]:
+) -> Generator[tuple, None, None]:
     """
-    Compare two list by key instead of by index
-
-    :param old_fields: previous field info list
-    :param new_fields: current field info list
-    :param key: if two dicts have the same value of this key, action is change; otherwise, is remove/add
-    :return: similar to dictdiffer.diff
-
-    Example::
-
-        >>> old = [{'through': 'a'}, {'through': 'b'}, {'through': 'c'}]
-        >>> new = [{'through': 'a'}, {'through': 'c'}]  # remove the second element
-        >>> list(diff(old, new))
-        [('change', [1, 'through'], ('b', 'c')),
-         ('remove', '', [(2, {'through': 'c'})])]
-        >>> list(get_dict_diff_by_key(old, new))
-        [('remove', '', [(0, {'through': 'b'})])]
-
+    Более надёжное сравнение списков словарей по ключу (например, through).
+    Устраняет ложные изменения, незначимые отличия и ошибки KeyError.
     """
-    length_old, length_new = len(old_fields), len(new_fields)
-    if length_old == 0 or length_new == 0 or length_old == length_new == 1:
-        yield from diff(old_fields, new_fields)
-    else:
-        value_index: dict[str, int] = {f[key]: i for i, f in enumerate(new_fields)}
-        additions = set(range(length_new))
-        for field in old_fields:
-            value = field[key]
-            if (index := value_index.get(value)) is not None:
-                additions.remove(index)
-                yield from diff([field], [new_fields[index]])  # change
-            else:
-                yield from diff([field], [])  # remove
-        if additions:
-            for index in sorted(additions):
-                yield from diff([], [new_fields[index]])  # add
+    old_map = {f.get(key): f for f in old_fields if key in f}
+    new_map = {f.get(key): f for f in new_fields if key in f}
+
+    all_keys = set(old_map) | set(new_map)
+
+    for k in all_keys:
+        old_val = old_map.get(k)
+        new_val = new_map.get(k)
+
+        if old_val and not new_val:
+            yield ("remove", "", [(k, old_val)])
+        elif not old_val and new_val:
+            yield ("add", "", [(k, new_val)])
+        elif not fields_equal(old_val, new_val):
+            yield ("change", [k, key], (old_val, new_val))
+
+
+def fields_equal(a: dict, b: dict) -> bool:
+    """
+    Умное сравнение полей моделей, игнорируя незначимые атрибуты.
+    """
+    ignore_keys = {"nullable", "unique", "field_type", "generated", "description"}
+    def cleaned(d):
+        return {k: v for k, v in d.items() if k not in ignore_keys}
+    
+    diff = DeepDiff(cleaned(a), cleaned(b), ignore_order=True)
+    return not diff
 
 
 def run_async(
