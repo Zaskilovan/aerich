@@ -317,10 +317,23 @@ class Migrate:
                             fg=Color.yellow,
                         )
                     continue
-            with contextlib.suppress(TypeError, KeyError):
-                if isinstance(change[0], bool) or change[0][0] == "db_constraint":
+            # with contextlib.suppress(TypeError, KeyError):
+            #     if isinstance(change[0], bool) or change[0][0] == "db_constraint":
+            #         continue
+            # new_value = change[0][1]
+            try:
+                val = change[0]
+                if isinstance(val, bool):
                     continue
-            new_value = change[0][1]
+                if isinstance(val, (list, tuple)) and val and val[0] == "db_constraint":
+                    continue
+                if isinstance(val, (list, tuple)) and len(val) > 1:
+                    new_value = val[1]
+                else:
+                    continue
+            except (TypeError, KeyError, IndexError) as e:
+                print(f"Error processing m2m field change: {e}")
+                continue
             if isinstance(new_value, str):
                 for new_m2m_field in new_m2m_fields:
                     if new_m2m_field["name"] == new_value:
